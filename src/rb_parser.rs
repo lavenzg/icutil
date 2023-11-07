@@ -1,8 +1,11 @@
-use crate::zone_info::ZoneInfo;
-use pest::{Parser, iterators::{Pair, Pairs}};
-use std::{path::Path, collections::HashMap, str::FromStr, num::ParseIntError};
+use crate::zone_info::{Zone, ZoneInfo};
+use anyhow::{anyhow, Error, Result};
+use pest::{
+    iterators::{Pair, Pairs},
+    Parser,
+};
 use pest_derive::Parser;
-use anyhow::{Result, anyhow, Error};
+use std::{collections::HashMap, num::ParseIntError, path::Path, str::FromStr};
 
 #[derive(Parser)]
 #[grammar = "rb.pest"]
@@ -30,7 +33,7 @@ impl ResourceBundleParser {
         let mut rb = ResourceBundleParser::parse(Rule::resource_bundle, &input)?;
         let _id = rb.next().unwrap();
         let table = rb.next().unwrap();
-        Self::parse_table(table.into_inner());
+        Self::parse_table(table.into_inner())?;
 
         Ok(ZoneInfo {
             version: "".to_string(),
@@ -41,80 +44,112 @@ impl ResourceBundleParser {
         })
     }
 
-    fn parse_table(mut table: Pairs<Rule>) {
+    fn parse_table(mut table: Pairs<Rule>) -> Result<()> {
         let mut map = HashMap::new();
         while let Some(key) = table.next() {
             let resource = table.next().unwrap();
             map.insert(key.as_str().trim(), resource);
         }
-        
-        if let Some(zones) = map.remove(ZONES_KEY) {
-            Self::parse_zones(zones);
-        }
+
+        let zones = if let Some(zones) = map.remove(ZONES_KEY) {
+            Self::parse_zones(zones)?
+        } else {
+            Default::default()
+        };
+        println!("Number of zones record: {}", zones.len());
 
         if let Some(names) = map.remove(NAMES_KEY) {
             Self::parse_names(names);
         }
+
+        Ok(())
     }
 
-    fn parse_zones(zones: Pair<Rule>) {
+    fn parse_zones(zones: Pair<Rule>) -> Result<Vec<Zone>> {
         let mut elements = zones.into_inner();
+        let mut zones = Vec::new();
         while let Some(element) = elements.next() {
-            Self::parse_zones_record(element);
+            zones.push(Self::parse_zones_record(element)?);
         }
+
+        Ok(zones)
     }
-    
-    fn parse_zones_record(zone: Pair<Rule>) -> Result<()> {
+
+    fn parse_zones_record(zone: Pair<Rule>) -> Result<Zone> {
         match zone.as_rule() {
             Rule::integer => {
                 let number = zone.into_inner().next().unwrap().as_str();
                 let alias_to: u32 = number.parse()?;
+                Ok(Zone::AliasTo(alias_to))
             }
-            Rule::table => {
-                Self::parse_zone_details(zone.into_inner());
-            }
-            _ => unreachable!()
+            Rule::table => Self::parse_zone_details(zone.into_inner()),
+            _ => unreachable!(),
         }
-
-        Ok(())
     }
 
-    fn parse_zone_details(mut details: Pairs<Rule>) -> Result<()> {
+    fn parse_zone_details(mut details: Pairs<Rule>) -> Result<Zone> {
+        let mut resource_map = HashMap::new();
         while let Some(key) = details.next() {
             let resource = details.next().unwrap();
-            match key.as_str().trim() {
-                TRANS_PRE32_KEY => {
-                    let trans_pre32_vec: Vec<i32> = Self::parse_intvector(resource)?; 
-                }
-                TRANS_KEY => {
-                    let trans_vec: Vec<i32> = Self::parse_intvector(resource)?; 
-                }
-                TRANS_POST32_KEY => {
-                    let trans_post_vec: Vec<i32> = Self::parse_intvector(resource)?; 
-                }
-                TYPE_OFFSETS_KEY => {
-                    let type_offsets_vec: Vec<i64> = Self::parse_intvector(resource)?; 
-                }
-                TYPE_MAP_KEY => {
-                    let type_map: Vec<u8> = Self::parse_intvector(resource)?; 
-                }
-                FINAL_RULE_KEY => {
-                    let final_rule = Self::parse_string(resource);
-                }
-                FINAL_RAW_KEY => {
-                    let final_raw: u32 = Self::parse_integer(resource)?; 
-                }
-                FINAL_YEAR_KEY => {
-                    let final_year: u32 = Self::parse_integer(resource)?; 
-                }
-                LINKS_KEY => {
-                    let aliases: Vec<u32> = Self::parse_intvector(resource)?;
-                }
-                _ => unreachable!()
-            }
+            resource_map.insert(key.as_str().trim(), resource);
         }
+        let trans_pre32: Vec<i32> = if let Some(resource) = resource_map.remove(TRANS_PRE32_KEY) {
+            Self::parse_intvector(resource)?
+        } else {
+            Default::default()
+        };
+        let trans: Vec<i32> = if let Some(resource) = resource_map.remove(TRANS_KEY) {
+            Self::parse_intvector(resource)?
+        } else {
+            Default::default()
+        };
+        let trans_post32: Vec<i32> = if let Some(resource) = resource_map.remove(TRANS_POST32_KEY) {
+            Self::parse_intvector(resource)?
+        } else {
+            Default::default()
+        };
+        let type_offsets: Vec<i64> = if let Some(resource) = resource_map.remove(TYPE_OFFSETS_KEY) {
+            Self::parse_intvector(resource)?
+        } else {
+            Default::default()
+        };
+        let type_map: Vec<u8> = if let Some(resource) = resource_map.remove(TYPE_MAP_KEY) {
+            Self::parse_bin(resource.into_inner().next().unwrap())?
+        } else {
+            Default::default()
+        };
+        let final_rule_id = resource_map
+            .remove(FINAL_RULE_KEY)
+            .map(|resource| Self::parse_string(resource.into_inner().next().unwrap()))
+            .unwrap_or_default();
+        let final_raw: i32 = if let Some(resource) = resource_map.remove(FINAL_RAW_KEY) {
+            Self::parse_integer(resource.into_inner().next().unwrap())?
+        } else {
+            Default::default()
+        };
+        let final_year: i32 = if let Some(resource) = resource_map.remove(FINAL_YEAR_KEY) {
+            Self::parse_integer(resource.into_inner().next().unwrap())?
+        } else {
+            Default::default()
+        };
+        let aliases: Vec<u32> = if let Some(resource) = resource_map.remove(LINKS_KEY) {
+            Self::parse_intvector(resource)?
+        } else {
+            Default::default()
+        };
+        let zone_detail = Zone::Detail {
+            trans_pre32,
+            trans,
+            trans_post32,
+            type_offsets,
+            type_map,
+            final_rule_id,
+            final_raw,
+            final_year,
+            aliases,
+        };
 
-        Ok(())
+        Ok(zone_detail)
     }
 
     fn parse_intvector<T: FromStr<Err = ParseIntError>>(vec: Pair<Rule>) -> Result<Vec<T>> {
@@ -125,24 +160,31 @@ impl ResourceBundleParser {
         }
         Ok(ret)
     }
-    
-    fn parse_string(s: Pair<Rule>) -> String {
-        s.as_str().to_string()
-    }
-    
-    fn parse_integer<T: FromStr<Err = ParseIntError>>(i: Pair<Rule>) -> Result<T> {
-        i.as_str().parse().map_err(Error::msg)
-    }
-    
-    fn parse_names(names: Pair<Rule>) {
-        
-    }
-    
-    fn parse_rules(rules: Pair<Rule>) {
-        
-    }
-    
-    fn parse_regions(regions: Pair<Rule>) {
 
+    fn parse_string(s: Pair<Rule>) -> String {
+        s.as_str().trim_matches('"').to_string()
     }
+
+    fn parse_integer<T: FromStr<Err = ParseIntError>>(i: Pair<Rule>) -> Result<T> {
+        i.as_str()
+            .parse()
+            .map_err(|err| anyhow!("Parse {} failed: {}", i.as_str(), err))
+    }
+
+    fn parse_bin(bin: Pair<Rule>) -> Result<Vec<u8>> {
+        let s = bin.as_str().trim_matches('"');
+        assert_eq!(s.len() % 2, 0);
+        let mut ret = Vec::with_capacity(s.len() / 2);
+        for hex_code in s.chars().array_chunks::<2>() {
+            ret.push(u8::from_str_radix(&String::from_iter(hex_code), 16)?);
+        }
+
+        Ok(ret)
+    }
+
+    fn parse_names(names: Pair<Rule>) {}
+
+    fn parse_rules(rules: Pair<Rule>) {}
+
+    fn parse_regions(regions: Pair<Rule>) {}
 }

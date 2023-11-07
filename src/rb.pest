@@ -39,10 +39,12 @@ array = {
     ~ "}"
 }
 
+binary_str = {
+    (("\"" ~ (ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT)*  ~ "\"") | (ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT)+)
+}
+
 binary = {
-    (":binary" | ":bin") ~ "{" ~ 
-    (("\"" ~ (ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT)*  ~ "\"") | (ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT)+) ~ 
-    "}"
+    (":binary" | ":bin") ~ "{" ~ binary_str ~ "}"
 }
 
 integer = { 
