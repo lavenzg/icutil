@@ -1,0 +1,78 @@
+// This PEG grammar is translated from
+// https://github.com/unicode-org/icu-docs/blob/main/design/bnf_rb.txt 
+// The original grammar is outdated and does not really match the
+// data file, so some changes are made in this grammar, which may
+// not be general enough to handle other rb files.
+
+resource_bundle = _{ SOI ~ ID ~ table ~ EOI } 
+
+table = {
+    (":table" ~ "(nofallback)"?)? ~ "{" ~ (key ~ resource)* ~ "}"
+}
+
+key = {
+    ID | ("\"" ~ ID ~ "\"")
+}
+
+resource = _{
+    string | array | table | binary | integer | intvector
+}
+
+string = {
+    ":string"? ~ "{" ~ ("\"" ~ UNICODE_CHARS ~ "\"" | UNICODE_CHARS) ~ "}"
+}
+
+string_element = _{
+    "\"" ~ UNICODE_CHARS ~ "\""
+} 
+
+// Non-empty
+string_array = {
+    string_element ~ ("," ~ string_element)* ~ ","?
+}
+
+array = {
+    ":array"? ~ "{" ~
+    (
+        string_array | resource*
+    )
+    ~ "}"
+}
+
+binary = {
+    (":binary" | ":bin") ~ "{" ~ 
+    (("\"" ~ (ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT)*  ~ "\"") | (ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT)+) ~ 
+    "}"
+}
+
+integer = { 
+    (":integer" | ":int") ~ "{" ~ NUMBER ~ "}"
+}
+
+opt_intvector = _{
+    (NUMBER ~ "," ~ opt_intvector?) | NUMBER
+}
+
+intvector = {
+    ":intvector" ~ "{" ~ opt_intvector? ~ "}"
+}
+
+ID = @{ CHAR+ }
+
+NUMBER = @{ SIGN? ~ ASCII_DIGIT+ }
+
+UNICODE_CHARS = @{ CHAR+ }
+
+CHAR = {
+    ASCII_ALPHANUMERIC | SPACE | "%" | "'" | "&" | "("
+        | ")" | "*" | "+" | "-" | "/" | "," | "." | ";"
+        | "<" | "=" | ">" | "?" | "_"
+}
+
+SIGN = { "-" }
+
+SPACE = { " " }
+
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE)}
+
+WHITESPACE = _{ " " | NEWLINE }
