@@ -4,6 +4,7 @@
 #include <vector>
 
 struct AliasTo {
+    uint32_t index;
     uint32_t target;
 };
 
@@ -14,17 +15,38 @@ struct Zone {
     std::vector<int32_t> transPost32;
     std::vector<int64_t> typeOffsets;
     std::vector<uint8_t> typeMap;
-    std::string finalRule;
+    const char *const finalRule;
     int32_t finalRaw;
     int32_t finalYear;
     std::vector<uint16_t> aliases; 
 };
 
-const Zone kTzData[] = {
-    {0, {1, 2, 3}, {1, 2}, {}, {1, 2}, {0, 1}, "tz", 12, 12, {0, 1}}
+struct Rule {
+    const char *const id;
+    int32_t values[11];
+};
+
+const Zone kZonesDetails[] = {
+#include "zones.def"
+};
+
+const AliasTo kZoneAliases[] = {
+#include "aliases.def"
+};
+
+const Rule kRules[] = {
+#include "rules.def"
+};
+
+const char* names[] = {
+#include "names.def"
+};
+
+const char* regions[] = {
+#include "regions.def"
 };
 
 int main() {
-    std::cout << sizeof(kTzData) << ", " << sizeof(kTzData) / sizeof(kTzData[0]) << "\n";
+    std::cout << sizeof(kZonesDetails) << ", " << sizeof(kZonesDetails) / sizeof(kZonesDetails[0]) << "\n";
     return 0;
 }

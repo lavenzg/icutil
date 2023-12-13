@@ -1,4 +1,4 @@
-use crate::zone_info::{Zone, ZoneInfo};
+use crate::zone_info::{Zone, ZoneInfo, ZoneRule};
 use anyhow::{anyhow, Error, Result};
 use pest::{
     iterators::{Pair, Pairs},
@@ -33,18 +33,10 @@ impl ResourceBundleParser {
         let mut rb = ResourceBundleParser::parse(Rule::resource_bundle, &input)?;
         let _id = rb.next().unwrap();
         let table = rb.next().unwrap();
-        Self::parse_table(table.into_inner())?;
-
-        Ok(ZoneInfo {
-            version: "".to_string(),
-            zones: Vec::new(),
-            names: Vec::new(),
-            rules: Vec::new(),
-            regions: Vec::new(),
-        })
+        Self::parse_table(table.into_inner())
     }
 
-    fn parse_table(mut table: Pairs<Rule>) -> Result<()> {
+    fn parse_table(mut table: Pairs<Rule>) -> Result<ZoneInfo> {
         let mut map = HashMap::new();
         while let Some(key) = table.next() {
             let resource = table.next().unwrap();
@@ -58,11 +50,34 @@ impl ResourceBundleParser {
         };
         println!("Number of zones record: {}", zones.len());
 
-        if let Some(names) = map.remove(NAMES_KEY) {
-            Self::parse_names(names);
-        }
+        let names = if let Some(names) = map.remove(NAMES_KEY) {
+            Self::parse_names(names)
+        } else {
+            Default::default()
+        };
+        println!("Number of names: {}", names.len());
 
-        Ok(())
+        let regions = if let Some(regions) = map.remove(REGIONS_KEY) {
+            Self::parse_regions(regions)
+        } else {
+            Default::default()
+        };
+        println!("Number of regions: {}", regions.len());
+
+        let rules = if let Some(rules) = map.remove(RULES_KEY) {
+            Self::parse_rules(rules)?
+        } else {
+            Default::default()
+        };
+        println!("Number of rules: {}", rules.len());
+
+        Ok(ZoneInfo {
+            version: "".to_string(),
+            zones,
+            names,
+            rules,
+            regions,
+        })
     }
 
     fn parse_zones(zones: Pair<Rule>) -> Result<Vec<Zone>> {
@@ -182,9 +197,31 @@ impl ResourceBundleParser {
         Ok(ret)
     }
 
-    fn parse_names(names: Pair<Rule>) {}
+    fn parse_names(names: Pair<Rule>) -> Vec<String> {
+        Self::parse_string_array(names)
+    }
 
-    fn parse_rules(rules: Pair<Rule>) {}
+    fn parse_regions(regions: Pair<Rule>) -> Vec<String> {
+        Self::parse_string_array(regions)
+    }
 
-    fn parse_regions(regions: Pair<Rule>) {}
+    fn parse_string_array(rule: Pair<Rule>) -> Vec<String> {
+        let inner = rule.into_inner().next().unwrap().into_inner();
+        inner.map(|s| s.as_str().to_string()).collect()
+    }
+
+    fn parse_rules(zone_rules: Pair<Rule>) -> Result<Vec<ZoneRule>> {
+        let mut ret = Vec::new();
+        let mut inner = zone_rules.into_inner();
+        while let Some(key) = inner.next() {
+            let rule_name = key.as_str().to_string();
+            let resource = inner.next().unwrap();
+            let rule: Vec<i32> = Self::parse_intvector(resource)?;
+            ret.push(ZoneRule {
+                id: rule_name,
+                values: rule,
+            });
+        }
+        Ok(ret)
+    }
 }
